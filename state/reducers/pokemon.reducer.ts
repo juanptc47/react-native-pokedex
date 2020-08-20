@@ -1,9 +1,9 @@
 // Redux Types
 import { Action, Dispatch } from 'redux';
-// import { AppState } from '../store';
+import { AppState } from '../store';
 
 // APIs
-import PokemonAPI from '../apis/pokemon.api';
+import PokemonAPI, { EvolvesTo } from '../apis/pokemon.api';
 
 /*
  * Action Types
@@ -28,21 +28,17 @@ export interface Pokemon {
     weight: number;
     types: string[];
     speciesData?: {
-        eggGroup: string;
         genderRate: number;
         captureRate: number;
-        genus: string[];
+        genus: string;
+        evolutionLineId: string;
     };
-    evloutionChain?: {
-        id: string;
-        name: string,
-        thumbnailURL: string;
-    }[],
+    evloutionChain?: string[],
 }
 export type PokemonState = {
     pokemon: { [key: string]: Pokemon };
     pokemonStatus: 'PENDING' | 'SUCCESS' | 'ERROR' | 'IDLE';
-    onScreenPokemonStatus: 'UPDATNG' | 'PENDING' | 'SUCCESS' | 'ERROR' | 'IDLE';
+    onScreenPokemonStatus: 'UPDATING' | 'PENDING' | 'SUCCESS' | 'ERROR' | 'IDLE';
     errorMessage?: string;
 };
 
@@ -59,7 +55,7 @@ export interface SetReducerStatusAction extends Action {
 
 export interface SetOnScreenPokemonStatusAction extends Action {
     type: typeof SET_ON_SCREEN_POKEMON_STATUS;
-    status: 'UPDATNG' | 'PENDING' | 'SUCCESS' | 'ERROR' | 'IDLE';
+    status: 'UPDATING' | 'PENDING' | 'SUCCESS' | 'ERROR' | 'IDLE';
 }
 
 export type AuthActionTypes = SetPokemonAction | SetReducerStatusAction | SetOnScreenPokemonStatusAction;
@@ -87,7 +83,7 @@ export const setReducerStatus = (status: 'PENDING' | 'SUCCESS' | 'ERROR' | 'IDLE
     };
 };
 
-export const setPokemonOnScreenStatus = (status: 'PENDING' | 'SUCCESS' | 'ERROR' | 'IDLE'): SetOnScreenPokemonStatusAction => {
+export const setPokemonOnScreenStatus = (status: 'UPDATING' | 'PENDING' | 'SUCCESS' | 'ERROR' | 'IDLE'): SetOnScreenPokemonStatusAction => {
     return {
         type: SET_ON_SCREEN_POKEMON_STATUS,
         status,
@@ -123,9 +119,86 @@ export const readPokemonByName = (pokemonName: string): Function => {
         }).catch((e: Error) => {
             console.log(e.message);
             dispatch(setPokemonOnScreenStatus('ERROR'));
+        });
+    };
+};
+
+export const readPokemonSpeciesData = (pokemonName: string): Function => {
+    const pokemonAPI = new PokemonAPI();
+
+    return (dispatch: Dispatch, getState: () => AppState): void => {
+        dispatch(setPokemonOnScreenStatus('UPDATING'));
+        pokemonAPI.getPokemonSpeciesData(pokemonName).then((pokemonData) => {
+            const currentPokemon = getState().pokemonState.pokemon[pokemonName];
+            const evolutionLineURLBreakdown = pokemonData.evolution_chain.url.split('/');
+            dispatch(setPokemon(
+                pokemonName,
+                {
+                    ...currentPokemon,
+                    speciesData: {
+                        captureRate: Math.round((pokemonData.capture_rate/255) * 100),
+                        genderRate: Math.round((pokemonData.gender_rate/8) * 100),
+                        genus: pokemonData.genera.find(item => item.language.name === 'en')?.genus!,
+                        evolutionLineId: evolutionLineURLBreakdown[evolutionLineURLBreakdown.length - 2],
+                    }
+                }
+            ));
+            dispatch(setPokemonOnScreenStatus('SUCCESS'));
+        }).catch((e: Error) => {
+            console.log(e.message);
+            dispatch(setPokemonOnScreenStatus('ERROR'));
         })
     };
 };
+
+export const readPokemonEvolutionChain = (chainId: string, pokemonId: string): Function => {
+    const pokemonAPI = new PokemonAPI();
+
+    return (dispatch: Dispatch, getState: () => AppState): void => {
+        dispatch(setPokemonOnScreenStatus('UPDATING'));
+        pokemonAPI.getEvolutionLinesData(chainId).then(chainData => {
+            const currentPokemon = getState().pokemonState.pokemon[pokemonId];
+            const evolutionLine: string[] = [];
+            const getNameFromEvolvesTo = (evolvesTo: EvolvesTo[]) => {
+                if (evolvesTo.length > 0) {
+                    evolutionLine.push(evolvesTo[0].species.name);
+                    getNameFromEvolvesTo(evolvesTo[0].evolves_to);
+                }
+            }
+            evolutionLine.push(chainData.chain.species.name);
+            getNameFromEvolvesTo(chainData.chain.evolves_to);
+            dispatch(setPokemon(pokemonId, {
+                ...currentPokemon,
+                evloutionChain: evolutionLine,
+            }));
+            evolutionLine.forEach(pokemonName => {
+                pokemonAPI.getPokemonByName(pokemonName).then((pokemonData) => {
+                    const capitlizedName = pokemonData.name.charAt(0).toUpperCase() + pokemonData.name.slice(1);
+                    const additionalData = getState().pokemonState.pokemon[pokemonName] || {};
+                    dispatch(setPokemon(
+                        pokemonName,
+                        {
+                            ...additionalData,
+                            id: `${pokemonData.id}`,
+                            name: capitlizedName,
+                            thumbnailURL: pokemonData.sprites.front_default,
+                            height: pokemonData.height/10,
+                            pokedexNumber: pokemonData.order,
+                            types: pokemonData.types.map(type => type.type.name),
+                            weight: pokemonData.weight/10,
+                        }
+                    ));
+                }).catch((e: Error) => {
+                    console.log(e.message);
+                });
+            })
+            dispatch(setPokemonOnScreenStatus('SUCCESS'));
+        }).catch(e => {
+            console.log(e.message);
+            dispatch(setPokemonOnScreenStatus('ERROR'));
+        })
+    }
+}
 
 const initialState: PokemonState = {
     pokemon: {},
