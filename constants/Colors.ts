@@ -3,8 +3,8 @@ const tintColorDark = '#fff';
 
 export default {
   light: {
-    text: '#000',
-    background: '#fff',
+    text: '#fff',
+    background: 'transparent',
     tint: tintColorLight,
     tabIconDefault: '#ccc',
     tabIconSelected: tintColorLight,
@@ -15,5 +15,8 @@ export default {
     tint: tintColorDark,
     tabIconDefault: '#ccc',
     tabIconSelected: tintColorDark,
+  },
+  appColors: {
+    pokedexRed: 'rgb(252, 27, 86)',
   },
 };
